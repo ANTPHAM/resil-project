@@ -1,0 +1,766 @@
+---
+title: ' Praticing Statistical Analysis &  Machine Learning Techniques- Cancellation
+  Risks in Insurance Contracts'
+author: "Antoine.T.PHAM/ Data Science Courses-DSSP 4/ Polytechnique Paris"
+date: "Mai-Septembre 2016"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 5
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 5
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, cache = TRUE, autodep = TRUE, tidy = FALSE, error = TRUE)
+```
+
+
+## Introduction
+
+In this project, we will work with a dataset which contains  140 variables on around 180000 clients holding at least one insurance contrat cancelled or not on the 31 th july 2016. The outcome is labeled " TOP_RESIL": 0 = No cancellation; 1= partial cancellation and 2= total cancellation.
+
+This data set called "Base d'analyse" has been built and validated by our different teams working together for months. The original data set is built and stored in SAS or SPSS format, we will work on the extracted csv format in this project.
+
+Let's take a look in the data set and load some packages
+
+```{r/ }
+
+BASE1SPSS<- read.csv("C:/Users/PB00193/Desktop/Project Resil/medical cost1/BASE_ANALYSE_V61.csv", sep=';')
+#BASE1SPSS<- read.csv("E:/Project Resil/medi 1/BASE_ANALYSE_V61.csv", sep=';')
+dim(BASE1SPSS)
+library(funModeling)
+library(mlr)
+library(mice)
+library(plyr)
+library(caret)
+library(rpart)
+library(klaR)
+library(randomForest)
+library(ggplot2)
+library(nnet)
+library(foreign)
+library(MASS)
+library(scales)
+library(dplyr)
+#check each column
+summarizeColumns(BASE1SPSS)
+```
+
+#Exploring the Data set
+
+I first modify the type of some variables
+
+```{r convert integrer to numeric value & integrer to numeric values}
+# convert integrer value to numeric value
+to.numerics<- function ( df,variables){
+  for (variable in variables){
+    df[[variable]]<- as.numeric(df[[variable]])
+  }
+  return(df)
+}
+integre.vars<- c('ADIFUE','AFF_FM_N3','AFF_FM_N2','AFF_FM_N1','AFF_FM_NBSAL','AFF_NBSAL','CTCO_DELAI_TELSORTANT',
+                 'CTCO_NB_TELSORTANT','CTCO_DELAI_TELENTRANT','CTAD_DELAI_TELSORTANT','CTAD_NB_TELSORTANT','CTAD_DELAI_TELENTRANT',
+                 'CTAD_NB_TELENTRANT','CTCO_NB_TELENTRANT','CTCO_DELAI_SIM','CTCO_NB_SIM','CTCO_DELAI_VISITE','CTCO_NB_VISITE','CTUAD_NBNCAD_INA',
+                 'CTUAD_NBCAD_INA', 'CTAD_DELAI_INAFM','CTAD_NB_INAFM','CTAD_DELAI_INA','CTAD_NB_INA','CTCO_DELAI_HORSFM',
+                 'CTCO_NB_HORSFM','CTAD_DELAI_HORSFM','CTAD_NB_HORSFM','CTCO_DELAI_FM','CTCO_NB_FM','CTAD_DELAI_FM',
+                 'CTAD_NB_FM','AFFNCAD_FM_N3_NBSAL','AFFNCAD_FM_N2_NBSAL','AFFNCAD_FM_N1_NBSAL','AFFNCAD_FM_NBSAL','AFFNCAD_NBSAL',
+                 'AFFCAD_FM_N3_NBSAL','AFFCAD_FM_N2_NBSAL','AFFCAD_FM_N1_NBSAL','CAD_AGE_MEDIAN','CAD_AGE_MOYEN','AFFCAD_FM_NBSAL','AFFCAD_NBSAL',
+                 'ADHNCAD_DUREE','ADHCAD_DUREE','MUNASAF_MINDELAICTADINA','MUNASAF_MAXNBCTADINA','MUNASAF_AGEMOYEN','ENT_ANCIENNETE','AGE_MOYEN','ADH_DUREE')
+BASE2SPSS<-to.numerics(BASE1SPSS,integre.vars)
+
+to.factors<- function ( df,variables){
+  for (variable in variables){
+    df[[variable]]<- as.factor(df[[variable]])
+  }
+  return(df)
+}
+# and categorical vaiables to factors
+
+categoric.vars<- c('TOP_RESIL','ENT_TOPTEL','ENT_TOPTELPORT','ENT_TOPMAIL','ENT_DR','ENT_CHEF','ENT_CREATEUR','TIERS_TOPCPT','MUNASAF_TOPPRESENCE','MUNASAF_TOPADHFM','MUNASAF_TOPADHPRVRTA','MUNASAF_TOPADHIND','ADHCAD_TOPRESIL','ADHNCAD_TOPRESIL','ADHENT_RET','ADHENT_GAT','ADHENT_PRV','ADHENT_PVS','ADHENT_GDIA','ADHENT_RCJ','ADHENT_PPAB','ADHENT_EPS','CONC_FM','CTX_TOPLJ','CTX_TOPRJ','ADH_OFC','NCAD_ADIFUE','ADHNCAD_OFC','CAD_ADIFUE','ADHCAD_OFC','MUNASAF_NBPA','TER_DDSECT','TER_DELE','TER_DR','ENT_DEPT','BASEDMC_RESIL_FMO','BASEDMC_RESIL_FME','BASEDMC_RESIL_FMC','ADIFUE')
+BASE<- to.factors(BASE2SPSS,categoric.vars)
+# show columns
+head(df_status(BASE),10)
+
+```
+2 nd check/ missing values in each column
+```{r Missing values}
+sapply(BASE, function(x) sum ( is.na(x)))
+
+```
+
+Splitting the data set to numeric and factor classe
+
+```{r- split classes}
+splitclass<- split(names(BASE), sapply(BASE, function(x){class(x)}))
+splitclass
+```
+
+Creating a numeric subset and a factor subset
+```{r classes splitting}
+varnum<- BASE[splitclass$numeric]
+varfactor<- BASE[splitclass$factor]
+# verify correlations between numeric variables
+cor<-cor(varnum)
+head(cor,5)
+# 2 eme method: rcorr(as.matrix(varnum))
+```
+
+Show the frequency of the target
+```{r}
+table(BASE$TOP_RESIL)
+```
+
+#Data Visualization
+
+```{r the target: TOP_RESIL}
+ggplot(data=BASE,aes(x=1,fill=TOP_RESIL))+geom_bar()
+
+barplot(table(BASE$TOP_RESIL), 
+        main= 'Fréquence des resiliations', 
+        col= c("lightblue","steelblue","darkblue"), 
+        legend.text =c("0 = Non","1 = Partielle","2 = Totale"),
+        xlab="Type de resiliation", ylab="Nombre de contrats",
+        ylim=c(0,150000),
+        beside=TRUE,
+        args.legend = list(x="topright",title= "Type", cex=0.6)
+)
+# Note: hight imbalanced data set
+
+
+```
+More visualization
+
+```{r- Types of client groups}
+
+table(BASE$ENT_TYPGRPE)
+barplot( table(BASE$ENT_TYPGRPE),col="lightblue",
+         main="Type d'entreprise",
+         xlab="Type d'etreprise", ylab="Nombre",
+         cex.main=0.8, cex.axis=0.6,
+         cex.names = 0.6, cex.lab=0.8, ylim= c(0,200000))
+```
+
+Client type vs. Target
+```{r fig.width=8, fig.height=8 }
+ggplot(data = mutate(BASE,Tresil= as.factor(BASE$TOP_RESIL)),aes(x = ENT_TYPGRPE, fill = ENT_TYPGRPE)) + geom_bar() + facet_wrap(~ Tresil)
+# show the relation between the target and this feature
+library(gmodels)
+tbcgr<- CrossTable(BASE$TOP_RESIL,BASE$ENT_TYPGRPE,prop.r = FALSE)
+```
+
+
+Show the distribution & skewed of some numeric features
+```{r- variable: Anciennete}
+# Histogram: company lifetime
+hist(BASE$ENT_ANCIENNETE,xlab = 'Anciennete ( a la resiliation ou a la date arrete)', main = ' Distribution Anciennete')
+# company lifetime density
+ggplot(BASE,aes(x=ENT_ANCIENNETE))+
+  geom_density(colour='steelblue', 
+               fill="lightblue",alpha=0.8)+
+  expand_limits(x=0,y=0)
+```
+
+Visualizing the relation between this variable and the target
+
+```{r/ density courbes and box plots}
+#by density courbes
+tm <- ddply(BASE, "TOP_RESIL", summarise, grp.mean=mean(ENT_ANCIENNETE))
+ggplot(BASE,aes(x=ENT_ANCIENNETE))+ 
+      geom_density(aes(group=TOP_RESIL, colour=TOP_RESIL, fill=NULL), alpha=0.6)+
+      geom_vline(data=tm, aes(xintercept=grp.mean, color=TOP_RESIL),linetype="dashed")
+
+# by box plots
+theme<-theme_set(theme_minimal())
+ggplot(BASE,
+       mapping=aes_string(y="ENT_ANCIENNETE", x="TOP_RESIL"))+
+  xlab("Resiliation")+
+  ylab("Duree anciennete")+
+  ggtitle("Duree anciennete/ Resiliations")+
+  geom_boxplot(outlier.color = "black",
+               aes_string(colour="TOP_RESIL",fill="TOP_RESIL"), alpha=0.8)+
+  stat_summary(geom = "crossbar", 
+               width=0.7,
+               fatten=0.5,
+               color="darkblue",
+               fun.data= function(x){
+                 return(c(y=median(x),
+                          ymin=median(x),
+                          ymax=median(x)))
+               })+ stat_summary(fun.data=function(x){
+                 return(c(y=median(x)*1.03,
+                          label= round(median(x),2)))
+               }, geom = "text",
+               fun.y= mean,
+               colour= "darkblue")
+
+
+```
+
+More visualization
+
+```{r}
+# box plot: Anciennete/ Type client
+ggplot(BASE,
+       mapping=aes_string(y="ENT_ANCIENNETE", x="ENT_TYPGRPE"))+
+  xlab("Type de groupe")+
+  ylab("Duree anciennete")+
+  ggtitle("Duree anciennete/ Type de groupe")+
+  geom_boxplot(outlier.color = "red",
+               aes_string(colour="ENT_TYPGRPE",fill="ENT_TYPGRPE"), alpha=0.8)+
+  stat_summary(geom = "crossbar", 
+               width=0.7,
+               fatten=0.5,
+               color="lightblue",
+               fun.data= function(x){
+                 return(c(y=median(x),
+                          ymin=median(x),
+                          ymax=median(x)))
+               })+ stat_summary(fun.data=function(x){
+                 return(c(y=median(x)*1.03,
+                          label= round(median(x),2)))
+               }, geom = "text",
+               fun.y= mean,
+               colour= "darkblue")
+# Box plot : Directions ( from 1 to 9)/ Anciennete 
+group_by(BASE,ENT_DR)%>%
+  summarise(anciennete_moyenne= mean( ENT_ANCIENNETE,na.rm=TRUE),
+            anciennete_median=median( ENT_ANCIENNETE,na.rm = TRUE))
+boxplot(ENT_ANCIENNETE ~ ENT_DR,BASE, range=1, xlab= 'ENT_DR',ylab= ' ENT_ANCIENNETE',col=c('116','99','102','53','424','214','135'))
+
+# Target/ Directions
+ggplot(BASE, aes(x=ENT_DR, fill = ENT_TYPGRPE)) + geom_bar(aes(colour = ENT_TYPGRPE))+ facet_wrap(~ TOP_RESIL)
+
+ggplot(BASE, aes(x=ENT_DR, fill = ENT_TYPGRPE)) + geom_bar(aes(colour = ENT_TYPGRPE))+ facet_wrap(~ TOP_RESIL)+ scale_y_continuous(trans='log2')
+
+```
+
+Check variables concerning Employee's age 
+```{r}
+# correlation : CAD Age Moyen vs Median et NCAD Age Moyen vs Median
+library(UsingR)
+attach(BASE)
+par(mfrow=c(3,3))
+plot(CAD_AGE_MOYEN,CAD_AGE_MEDIAN, main=paste("Correlation",signif(cor(CAD_AGE_MOYEN,CAD_AGE_MEDIAN),2)))
+plot(NCAD_AGE_MOYEN,NCAD_AGE_MEDIAN, main=paste("Correlation",signif(cor(NCAD_AGE_MOYEN,NCAD_AGE_MEDIAN),2)))
+hist(CAD_AGE_MOYEN, main="Histogram: Age Moyen Cadre")
+hist(NCAD_AGE_MOYEN,main="Histogram: Age Moyen NCadre")
+hist(CAD_AGE_MEDIAN, main="Histogram: Age Median Cadre")
+hist(NCAD_AGE_MEDIAN,main="Histogram: Age Median NCadre")
+# box plots
+boxplot(CAD_AGE_MOYEN, main="Age moyen CAD")
+boxplot(NCAD_AGE_MOYEN, main="Age moyen NCAD")
+```
+
+Check  more variables 
+
+```{r}
+# Contract lifetime for 2 types of contract: Cadre & Non Cadre
+ddf<-subset(BASE,select = c("ADHCAD_DUREE","ADHNCAD_DUREE"))
+ddf<-stack(ddf)# mettre les noms des colonnes en colonnes.
+ggplot(ddf,aes(x=values))+geom_density(aes(group=ind,colour=ind))
+# box  plots
+par(mfrow=c(1,2))
+boxplot(BASE$ADHCAD_DUREE,col = "lightblue",main= "duree contrat Cadre vs Non Cadre")
+boxplot(BASE$ADHNCAD_DUREE,col = "darkblue")
+```
+
+# Feature Engineering- 1st attempt
+Remove the variables having many Na's values or very high correlation. We will work also with the variables grouping 2 notions: Cadre & Non Cadre
+
+```{r- }
+myvars<- names(BASE) %in% c("DTARRETE","MIN_DTRESIL","ENT_ACMAIL", "INT_ETATABO","ADHCAD_OFC_ANNEEEFFET",
+                          "MUNASAF_AGEMOYEN","MUNASAF_TOPADHFM","MUNASAF_TOPADHPRVRTA","MUNASAF_TOPADHIND","MUNASAF_MAXNBCTADINA",
+                            "MUNASAF_MINDELAICTADINA","ADHCAD_TOPRESIL","ADHCAD_DUREE","ADHCAD_TYPCT","ADHCAD_GAMMEERP","ADHCAD_FORMULE",
+                            "ADHCAD_TARIF","ADHCAD_OPTSHPO","ADHCAD_OFC", "ADHNCAD_DUREE","ADHNCAD_TYPCT","ADHNCAD_GAMMEERP",
+                            "ADHNCAD_FORMULE","ADHNCAD_TARIF","ADHNCAD_OPTSHPO","ADHNCAD_OFC", "ADHNCAD_TOPRESIL",
+                            "ADHCAD_OFC_ANNEEEFFET","ADHNCAD_OFC_ANNEEEFFET",
+                            'AFFCAD_NBSAL', 'AFFCAD_FM_NBSAL', 'AFFCAD_FM_TAUXSAL', 'CAD_ADIFUE', 
+                            'CAD_AGE_MOYEN', 'CAD_AGE_MEDIAN','AFFCAD_FM_N1_NBSAL','AFFCAD_FM_N2_NBSAL','AFFCAD_FM_N3_NBSAL',
+                            'AFFNCAD_NBSAL', 'AFFNCAD_FM_NBSAL', 'AFFNCAD_FM_TAUXSAL', 'NCAD_ADIFUE', 
+                            'NCAD_AGE_MOYEN', 'NCAD_AGE_MEDIAN','AFFNCAD_FM_N1_NBSAL','AFFNCAD_FM_N2_NBSAL','AFFNCAD_FM_N3_NBSAL',  
+                            "BASEDMC_ANNEE_RESIL","BASEDMC_DATE_SAISIE","BASEDMC_RESIL_FMO","BASEDMC_RESIL_FME",
+                            "BASEDMC_RESIL_FMC","TER_DR","TER_DDSECT","CTAD_DELAI_FM","CTCO_DELAI_FM","CTAD_DELAI_HORSFM",
+                            "CTCO_DELAI_HORSFM","CTAD_DELAI_INA", "CTAD_DELAI_INAFM","CTUAD_NBCAD_INA","CTUAD_NBNCAD_INA",
+                           "CTCO_DELAI_VISITE","CTCO_DELAI_SIM","CTAD_DELAI_TELENTRANT","CTAD_DELAI_TELSORTANT","CTCO_DELAI_TELENTRANT",
+                           "CTCO_DELAI_TELSORTANT","TER_CASECT",'TER_DELE')
+dat<-BASE[!myvars]
+dim(dat)#[1] 184652 71: new data set
+df_status(dat)
+# let's impute median value to Age_Moyen variable ( 52028 missing values)
+dat$AGE_MOYEN[is.na(dat$AGE_MOYEN)]<- median(dat$AGE_MOYEN,na.rm = TRUE)
+# retirer N° ID
+dat1<-dat[-1]# / [1] 184652     70
+```
+
+Split again  the new data set
+
+
+```{r new classes splitting and correlation}
+splitclass1<- split(names(dat1), sapply(dat1, function(x){class(x)}))
+splitclass1
+# extracting numeric vaiables
+varnum1<-dat1[splitclass1$numeric]
+#correlations 
+cor_var<- cor(varnum1)
+head(cor_var,5)
+varnum2<-subset(dat1, select = c('TOP_RESIL',splitclass1$numeric))# numeric variables with the target
+dim(varnum2)
+# check some features by visualization
+featurePlot(x = varnum2[2:5], 
+            y = varnum2$TOP_RESIL, 
+            plot = "box", 
+            scales = list(y = list(relation="free"),
+            x = list(rot = 90)),  
+            layout = c(2,2), 
+            auto.key = list(columns = 2))
+
+```
+
+Preparing data set for Machine Learning implementation/ Train & Test sets
+: define an 70% train/30% test by splitting the dataset
+```{r }
+
+split=0.7
+trainIndex <- createDataPartition(dat1$TOP_RESIL, p=split, list=FALSE)
+data_train <- dat1[ trainIndex,]
+data_test <- dat1[-trainIndex,]
+# check
+dim(data_train)
+dim(data_test)
+table(data_train$TOP_RESIL)
+table(data_test$TOP_RESIL)
+```
+
+# Machine Learning 
+Since there is an outcome to predict for our models, supervised methods will be applied.
+
+I start applying different ML algorithms ( Naives Bayes, Random Forest, Tree Decisions, Multinomial Logistic and Linear Discriminant Analysis).For each one of them , I will try to run a model on the splitted data set and another one with K-fold Cross-validation ( repeated or not).
+
+You will see that belong to the model applied, more feature engineering can be done.
+
+Let's get started
+
+#Random Forest in the train set & test set
+```{r- 1st Machine Learning ( ML) with Random Forest model without K-folds cross-validation}
+# to remove variables having more than 53 levels- required by RF in R
+myvars1<- names(data_train)%in% c('ENT_DEPT','ADH_OPTSHPO','BASEDMC_NOUVELASSUREUR','BASEDMC_MECONTENTEMENT','INT_DTABO','ENT_APENAF','ENT_NACE')
+
+# create the train et set data for this model
+data_trainRF<- data_train[!myvars1]
+data_testRF<- data_test[!myvars1]
+set.seed<-(2345)
+modelRf<- randomForest(TOP_RESIL~., data=data_trainRF,ntree=350,na.action=na.omit)
+modelRf
+
+```
+make prediction & check model accuracy
+```{r}
+# make prediction
+predictionsRf<- predict(modelRf,data_testRF[,2:63])
+confusionMatrix(predictionsRf, data_testRF[,1])# not too bad as score (accuracy= 96%)
+```
+see feature importance
+```{r }
+#see feature importance
+varImpRF<-varImp(modelRf)
+varImpRF$variables<-row.names(varImpRF)
+varImpRF<-varImpRF[order(-varImpRF$Overall),]
+varImpRF
+
+```
+
+let's make a plot of feature importance and check error with the best number oftrees
+```{r fig.width=8, fig.height=8 }
+#plot Feature importance
+varImpPlot(modelRf,type = 2)# remember that we will use this result for Multinomial Logistic&Tree decision)
+# check error and the best number of trees
+plot(modelRf)
+```
+
+
+to find the best number of trees 
+```{r}
+set.seed(123)
+which.min(modelRf$err.rate[,1])# to find the best number of trees = 341
+
+```
+
+fit a model with the number of trees obtained
+```{r}
+set.seed(1234)
+modelRf1<- randomForest(TOP_RESIL~., data=data_trainRF,ntree=341,na.action=na.omit)
+```
+
+make prediction by the new model
+```{r}
+predictionsRf1<- predict(modelRf1,data_testRF[,2:63])
+confusionMatrix(predictionsRf1, data_testRF[,1])
+```
+
+
+#Trying Random-Forest with the Ranger package
+```{r_ try with Ranger package}
+library(ranger)
+modelRf_ranger<- ranger(TOP_RESIL~., data = data_trainRF, write.forest = TRUE)
+predictionsRf_ranger<-predict(modelRf_ranger,data_testRF[,2:63])
+# check prediction by number in each classe
+table(data_testRF$TOP_RESIL,predictionsRf_ranger$predictions )
+# check  percentage accuracy  in each group 
+prop.table(table(data_testRF$TOP_RESIL,predictionsRf_ranger$predictions),1)*100
+diag(prop.table(table(data_testRF$TOP_RESIL,predictionsRf_ranger$predictions),1)*100)
+# You should see that Ranger model may run faster but less accuracy than Random Forest model
+
+## Variable importance
+modelRf_ranger <- ranger(TOP_RESIL ~ ., data = dat1, importance = "impurity")
+plot(modelRf_ranger$variable.importance)
+importance(modelRf_ranger)
+
+```
+You should see that Ranger model may run faster but less accuracy than Random Forest model
+
+Now, let's take a look into variable importance related to the whole data
+
+```{r}
+#fit the model
+modelRf_ranger <- ranger(TOP_RESIL ~ ., data = dat1, importance = "impurity")
+#create a data frame showing the importance of variables
+varImpranger<- as.data.frame(importance(modelRf_ranger))
+varImpranger<-cbind(variables=row.names(varImpranger),varImpranger)
+# change a colunm's name
+colnames(varImpranger)[2]<-"Importance"
+#see the top 10 important variables
+head(arrange(varImpranger,desc(Importance)),10)
+varImpranger$variables<- factor(varImpranger$variables,levels = varImpranger[order(varImpranger$Importance),"variables"])
+
+```
+
+Plot important variables
+```{r fig.width=10, fig.height=12 }
+ggplot(varImpranger,aes(y=variables,x=Importance)) +geom_point(stat = "identity")
+# let's do a comparison with the random Forest
+```
+
+
+#Random-Forest with K-fold Cross-Validation
+```{r- 1 st ML with RF with k-fold cross validation }
+# Random Forest avec K_fold cross validation
+set.seed(123)
+mtry<- sqrt(ncol(data_trainRF))
+modelRfcv<- train(TOP_RESIL~., data=data_trainRF,method='parRF', trControl=trainControl(method="cv",number=10,allowParallel = TRUE),metric='Accuracy',tuneGrid=expand.grid(.mtry=mtry))# use 'parRF' and not 'rf' as method so that  running faster however it tooks 5 hours!!!
+#see the details of the model
+modelRfcv
+
+# make predictions
+predictionsRfcv<- predict(modelRfcv,data_testRF[,2:63])
+confusionMatrix(predictionsRfcv, data_testRF[,1])
+
+# check Variable Improtance with this model
+varImp(modelRfcv)
+
+```
+
+plot important variables
+```{r fig.width=8, fig.height=10}
+varImpPlot(modelRfcv,type2)
+```
+
+# Naives Bayes algorithms
+- Naive Bayes on the train & test sets ( we will use the train set& the test set used by RF model )
+
+
+```{r- 1st ML with NAive Bayes model}
+
+modelNB <- NaiveBayes(TOP_RESIL~., data=data_trainRF)
+
+# create a test set and a target set
+x_testNB <- data_testRF[,2:63]
+y_testNB <- data_testRF[,1]
+# make prediction
+predictionsNB <- predict(modelNB, x_testNB)
+# summarize results
+confusionMatrix(predictionsNB$class, y_testNB)#need e1071
+prop.table(table(predictionsNB$class, y_testNB))# pauvre précision , surtout beaucoup de FN pour l clasee 
+# this model does not give a significant accuracy
+
+
+```
+
+- Naive Bayes with K-fold Cross-Validation (repeated and no repeated)
+```{r}
+# create a data for NB algorithm
+datNBcv<- dat1[!myvars1]#
+dim(datNBcv)
+split=0.75
+trainIndexNB <- createDataPartition(datNBcv$TOP_RESIL, p=split, list=FALSE)
+data_trainNB <- datNBcv[ trainIndexNB,]
+data_testNB <- datNBcv[-trainIndexNB,]
+dim(data_trainNB)
+dim(data_testNB)
+table(data_trainNB$TOP_RESIL)
+table(data_testNB$TOP_RESIL)
+
+# run a NB model with CV  not repeated
+set.seed(1234)
+modelNBcv = train(data_trainNB[,2:63],data_trainNB[,1],'nb',trControl=trainControl(method='cv',number=10))
+predictionsNBcv <- predict(modelNBcv,data_testNB[,2:63])
+confusionMatrix(predictionsNBcv, data_testNB[,1])
+
+# NB with CV repeated
+set.seed(2453)
+modelNBcvr = train(data_trainNB[,2:63],data_trainNB[,1],'nb',trControl=trainControl(method='repeatedcv',number=10,repeats = 5))
+predictionsNBcvr <- predict(modelNBcvr,data_testNB[,2:63])
+confusionMatrix(predictionsNBcvr, data_testNB[,1])
+
+```
+
+# Feature Engineering 2nd attempt ( data preparation for implementing other algorithmes)
+```{r Variable importance numeric variables}
+# VAR importance:
+library(pROC)
+filterVarImp(varnum2[,2:30],varnum2$TOP_RESIL,nonpara = FALSE)
+
+
+```
+
+Create dummy variabes- One hot encoding
+
+```{r}
+# create dummy variables/ count frequencies
+
+datnew<-dat
+summarizeColumns(datnew)
+
+# one-hot-encoding categorical features
+one_hot_encodeVar= c('ENT_TYPGRPE', 'ENT_DR', 'ADHENT_RET','ADHENT_GAT', 'ADHENT_PRV', 'ADHENT_PVS','ADHENT_GDIA',
+                  'ADHENT_RCJ','ADHENT_PPAB','ADHENT_EPS','ADH_TYPCT','ADH_GAMMEERP','ADH_TARIF','BASEDMC_TYPERESIL',
+                  'BASEDMC_SOUSCCONCURRENCE')
+dummies <- dummyVars(~ ENT_TYPGRPE+ENT_DR + ADHENT_RET +ADHENT_GAT+ADHENT_PRV+ADHENT_PVS+ADHENT_GDIA+
+                  ADHENT_RCJ+ADHENT_PPAB+ADHENT_EPS+ADH_TYPCT+ADH_GAMMEERP+ADH_TARIF+BASEDMC_TYPERESIL+BASEDMC_SOUSCCONCURRENCE, 
+                  data = datnew)
+datnew1 <- as.data.frame(predict(dummies, newdata = datnew))
+
+dim(datnew1)
+#colnames(datnew1)
+datnewcombined <- cbind(datnew[,-c(which(colnames(datnew) %in% one_hot_encodeVar))],datnew1)
+```
+
+Convert new columns to factor
+```{r convert new columns to factor}
+# convert new columns to factor
+to.factors<- function ( df,variables){
+  for (variable in variables){
+    df[[variable]]<- as.factor(df[[variable]])
+  }
+  return(df)
+}
+
+categoric.vars<- c(colnames(datnew1))
+datnewcombined<- to.factors(datnewcombined,categoric.vars)
+```
+
+Remove the variables having more than 99% null values
+```{r}
+myvars2<- names(datnewcombined)%in% c('ADH_GAMMEERP.O - N' ,'ADH_GAMMEERP.N - O')
+datnewcombined<-datnewcombined[!myvars2]
+dim(datnewcombined)
+```
+
+Remove the categorical variables having too many levels
+```{r}
+myvars3<- names(datnewcombined)%in% c('INT_DTABO' ,'ENT_CATJUR','ENT_APENAF','ENT_NACE','ENT_DEPT')
+datnewcombined<-datnewcombined[!myvars3]
+datnewcombined$AGE_MOYEN[is.na(datnewcombined$AGE_MOYEN)]<- median(datnewcombined$AGE_MOYEN,na.rm = TRUE)
+```
+
+Splitting classes in the new data set
+```{r}
+splitclass2<- split(names(datnewcombined), sapply(datnewcombined, function(x){class(x)}))
+#splitclass2
+varnum3<-datnewcombined[splitclass2$numeric]
+# correlation within numeric variables
+cor1<-cor(varnum3)
+head(cor1,3)
+#create a data containing numeric variables and the target
+varnum4<-subset(datnewcombined, select = c('TOP_RESIL',splitclass2$numeric))
+varnum4$AGE_MOYEN[is.na(varnum4$AGE_MOYEN)]<- median(varnum4$AGE_MOYEN,na.rm = TRUE)
+```
+
+Reduce data dimensions: based on Var importance obtained by the Random Forest model
+```{r}
+myvars4<-names(datnewcombined)%in% c('TOP_RESIL','PRESTFM_N','PRESTFM_N_1','PRESTFM_N_2','PRESTFM_N_3','CGAFM_N',
+                                    'CGAFM_N_1', 'CGAFM_N_2','CGAFM_N_3','ADH_DUREE','AFF_FM_N1',
+                                    'AFF_FM_N2','AFF_FM_N3','ENT_ANCIENNETE','AGE_MOYEN','AFF_NBSAL',
+                                    'AFF_FM_NBSAL','CTCO_NB_TELSORTANT','CTAD_NB_TELENTRANT','ADH_OFC',
+                                    'ADHENT_PPAB.0','ADHENT_PPAB.1','ADHENT_PPAB.2','CTX_TOPLJ',
+                                    'ADH_TARIF.FOR - FOR','ADH_TARIF.FOR - Non',"ADH_TARIF.FOR - SAL" ,
+                                    "ADH_TARIF.Non - FOR","ADH_TARIF.Non - Non","ADH_TARIF.Non - SAL",                                            "ADH_TARIF.SAL - FOR","ADH_TARIF.SAL - Non" ,"ADH_TARIF.SAL - SAL",
+                                    "TIERS_TOPCPT","ADHENT_PPAB.0","ADHENT_PPAB.1","ADHENT_PPAB.2")
+datnewcombined1<- datnewcombined[myvars4]
+```
+
+
+Splitting the train set and the test set
+
+```{r splitting the data set}
+# split data train and data set
+split=0.75
+trainIndex3 <- createDataPartition(datnewcombined1$TOP_RESIL, p=split, list=FALSE)
+data_trainnew <- datnewcombined1[ trainIndex3,]
+data_testnew <- datnewcombined1[-trainIndex3,]
+dim(data_trainnew)
+dim(data_testnew)
+table(data_trainnew$TOP_RESIL)
+```
+
+
+# Statistical & Machine Learning
+
+Since the outcome have more than 2 classes ( 0,1,2 ), I have choosen 2 parametric algorithmes: Multinomial Logistic and Linear Discriminant Analysis. This choice is also based on the objective of our project: building predictive models providing interesting informations on the relation between the target and the variables of the models which are also our business metrics. 
+
+For discovering and getting better a look on the profile of each client group ( 0,1 or 2), I will use Tree Decision algorithm that may capture non linear relations better than two last ones.
+
+Let's do with the Multinomial Logistic model
+```{r}
+
+```
+
+#Multinomial Logistic model
+```{r}
+
+data_trainnew$TOP_RESIL2 <- relevel(data_trainnew$TOP_RESIL, ref = "0")
+data_trainnew1<-data_trainnew[-1]
+set.seed(234)
+modelLog <- multinom(TOP_RESIL2 ~., data = data_trainnew1)# fit the model
+summary(modelLog)
+
+# extract the coefficients from the model and compute their exponentiate values
+exp(coef(modelLog))
+# for interpreting the weight( probability) that each variable can make so that the target move from one to another.
+# caculate the probabilities for each obs. in the training set
+head(prob <- fitted(modelLog))
+head(data_trainnew$TOP_RESIL)
+# var importance
+varimptLog<-varImp(modelLog)
+varimptLog$variables<-row.names(varimptLog)
+varimptLog<-varimptLog[order(-varimptLog$Overall),]
+varimptLog
+# Prediction/ Test Set
+data_testnew1<- data_testnew[-1]
+predictionLogmulti<-predict(modelLog, newdata = data_testnew1,type="class")
+# add "probs" to see probabilities as one of the project's objectives: prediction with probabilities.
+predictionLogproba<-predict(modelLog, newdata = data_testnew1,type="probs")
+head(predictionLogmulti)
+
+# Accuracy 
+postResample(data_testnew[1],predictionLogmulti)
+#Accuracy     Kappa 
+#0.9293142 0.4204888
+# Confusion matrix & Misssiclassification error
+table(predictionLogmulti,data_testnew$TOP_RESIL)
+prop.table(table(predictionLogmulti,data_testnew$TOP_RESIL))
+mean(as.character(predictionLogmulti) != as.character(data_testnew$TOP_RESIL))#.07
+```
+
+#Tree decision
+
+```{r}
+# remove the last column used in the logistic model.
+data_trainnew<- data_trainnew[-35]
+#  fit tree model
+modelTree <- rpart(TOP_RESIL~., data= data_trainnew,method = 'class',control=rpart.control(minsplit=100, , minbuckket= 10,maxdeepth=15,cp=0.001)) 
+printcp(modelTree) # display the results 
+plotcp(modelTree) # visualize cross-validation results 
+#summary(modelTree) # detailed summary of splits# don't run it in Rmarkdown
+
+```
+Plot the tree
+```{r fig.width=18, fig.height=18}
+
+plot(modelTree, uniform=TRUE, 
+  	main="Classification Tree ", margin=0.1)
+text(modelTree, use.n=TRUE, all=TRUE, cex=.7)
+
+
+
+```
+Create and save an image
+```{r}
+png("tree.png", res=80, height=2000, width=5000) 
+plot(modelTree, uniform=TRUE,main="Classification Tree ", margin=0.1) 
+text(modelTree, use.n=TRUE, all=TRUE, cex=.8)
+dev.off()
+```
+Make a tree prediction
+```{r}
+# make prediction
+predictree<- predict(modelTree, newdata=data_testnew1,type = 'class')
+head(predictree)
+table(predictree,data_testnew$TOP_RESIL)
+prop.table(table(predictree,data_testnew$TOP_RESIL))
+#summary(modelTree) # don't run this one
+postResample(data_testnew[1],predictree)
+```
+
+
+#Linear Discriminant Analysis
+Note: this algorithm is adapted only to models with numeric independent variables
+
+```{r}
+#LDA: will work with numeric values only
+
+# center +scale the data before
+varnum4[-1]<- scale(varnum4[-1],center = TRUE,scale = TRUE)
+# fit the model
+modellda <- lda(TOP_RESIL ~ ., 
+           data=varnum4) # no prior fixed
+#see the model          
+modellda
+prop.lda = modellda$svd^2/sum(modellda$svd^2)
+prediclda <- predict(object = modellda,
+                newdata = varnum4)
+
+dataset = data.frame(TOP_RESIL = varnum4[,"TOP_RESIL"],
+                     lda = prediclda$x)
+
+plotLda <- ggplot(dataset) + geom_point(aes(lda.LD1, lda.LD2, colour = TOP_RESIL, shape = TOP_RESIL), size = 1.5) + 
+  labs(x = paste("LD1 (", percent(prop.lda[1]), ")", sep=""),
+       y = paste("LD2 (", percent(prop.lda[2]), ")", sep=""))
+plotLda
+#Prediction with LDA
+
+# split train and test set
+split=0.75
+trainIndex4 <- createDataPartition(varnum4$TOP_RESIL, p=split, list=FALSE)
+varnum4_train <- varnum4[ trainIndex4,]
+varnum4_test <- varnum4[-trainIndex4,]
+dim(varnum4_train)
+dim(varnum4_test)
+# fit the model
+modelLda1 <- lda(TOP_RESIL ~ ., 
+         varnum4_train)
+modelLda1
+predictionLda = predict(object = modelLda1, # predictions
+               newdata = varnum4_test[,2:30])
+table(varnum4_test$TOP_RESIL,predictionLda$class)# not high accuracy
+# accuracy for each class
+diag(prop.table(table(varnum4_test$TOP_RESIL,predictionLda$class), 1))# not good for classes 1,2
+sum(diag(prop.table(table(varnum4_test$TOP_RESIL,predictionLda$class))))
+# with cross validation
+modelLdacv<-lda(TOP_RESIL ~ .,
+         varnum4, CV=TRUE)
+#modelLdacv # don't run it in Rmarkdown
+table(varnum4$TOP_RESIL,modelLdacv$class)
+diag(prop.table(table(varnum4$TOP_RESIL,modelLdacv$class),1))# not good accuracy for class 1 and 2
+```
+
+# End Note
+
+This R project is a contributive part of an real Data Project within our organisation. This projet is today ongoing.
+I have just got started with some data manipulation tasks and machine learning attemps. I have tried some algorithms but  I keep exploring other ways to achieve more improvement in accuracy with significant and useful statitical outputs for our business.
+
+
+
